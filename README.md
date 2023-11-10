@@ -22,4 +22,5 @@ The following parameters will let you to define whether you want the pack to hav
 
 random_init      = True    # True: Distance Logarithm for Curriculum  False: RL algorithm
 velocity         = True    # True: Puck with velocity   False: Puck Static
-width_goal       = 0.18    
+width_goal       = 0.25
+   
