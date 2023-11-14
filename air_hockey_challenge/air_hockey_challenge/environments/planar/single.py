@@ -16,7 +16,8 @@ class AirHockeySingle(AirHockeyBase):
         Constructor.
 
         """
-        self.init_state = np.array([-1.15570723, 1.30024401, 1.44280414])
+        # self.init_state = np.array([-1.07570723, 1.20024401, 1.34280414])
+        self.init_state = np.array([-1.07570723, 1.20024401, 1.30280414])
         super().__init__(gamma=gamma, horizon=horizon, n_agents=1, viewer_params=viewer_params)
 
         self.filter_ratio = 0.274

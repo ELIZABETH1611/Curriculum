@@ -72,12 +72,12 @@ class ATACOMAgent(AgentBase):
         self.prev_action = (1 - self._filter_ratio) * self.prev_action + self._filter_ratio * action
         self.preprocessors[0].update_action_hist(self.prev_action)
 	
-	# Atacom controller transform the sample action to the tangent space
+	    # Atacom controller transform the sample action to the tangent space
         s = np.concatenate(self.get_joint_state(state_orig))
         normalized_vel = self.atacom_controller.compose_action(s, self.prev_action, x_dot=0.)
         dq = self._vel_limit[1] * normalized_vel
 	
-	# Integrate the velocity
+	    # Integrate the velocity
         pos, vel = self.integrator(dq, state_orig)
         
         # The position and velocity is used to inteact with the environment

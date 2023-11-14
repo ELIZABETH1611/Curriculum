@@ -27,7 +27,7 @@ class AirHockeySingle(AirHockeyBase):
 
         success, self.init_state = inverse_kinematics(self.env_info['robot']['robot_model'],
                                                       self.env_info['robot']['robot_data'],
-                                                      np.array([0.65, 0., 0.1645]),
+                                                      np.array([0.75, 0., 0.1645]),
                                                       R.from_euler('xyz', [0, 5 / 6 * np.pi, 0]).as_matrix(),
                                                       initial_q=init_state)
 

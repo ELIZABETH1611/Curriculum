@@ -1,4 +1,5 @@
 import math
+import mujoco
 import numpy as np
 from typing import Dict
 from mushroom_rl.utils.spaces import Box
@@ -46,12 +47,15 @@ def check_border_contact(env, prev_obs, cur_obs, table_bounds, dt, eps=1e-3):
                     np.dot(prev_puck_vel / (np.linalg.norm(prev_puck_vel) + 1e-8),
                            puck_vel / (np.linalg.norm(puck_vel) + 1e-8)) < 0.9
 
-    # If there was a collision, we integrate the previous position to check for a boundary collision
+    # If there was a collision, we integrate the previous position to check for a boundary collision if the current step
+    # does not yield a collision
     # Obviously this makes only sense if the puck had some velocity
-    if collision:
+    out_of_bounds = np.any(puck_pos <= table_lb) or np.any(puck_pos >= table_ub)
+    if collision and not out_of_bounds:
         puck_pos = prev_puck_pos + dt * prev_puck_vel
+        out_of_bounds = np.any(puck_pos <= table_lb) or np.any(puck_pos >= table_ub)
 
-    if np.any(puck_pos <= table_lb) or np.any(puck_pos >= table_ub):
+    if out_of_bounds:
         # We compute a more accurate collision point if we hit the table boundaries
         dpos = puck_pos - prev_puck_pos
         intercept_times = np.concatenate(((table_lb - prev_puck_pos) / dpos, (table_ub - prev_puck_pos) / dpos), axis=0)
@@ -176,7 +180,12 @@ def setup_fn(cls, env, state=None):
     env.goal, puck_pos, puck_vel = env.task_sampler()
     # Only for testing
     # puck_vel = env.goal - puck_pos
-    env._model.site_pos[2] = np.concatenate((env.goal, 0.0), axis=None)
+    env._model.site_pos[mujoco.mj_name2id(env._model, mujoco.mjtObj.mjOBJ_SITE, "target")] = np.concatenate(
+        (env.goal, 0.0), axis=None)
+    boundaries = get_virtual_boundaries(env.goal, env.env_info['table']['length'])
+    env._model.site_pos[mujoco.mj_name2id(env._model, mujoco.mjtObj.mjOBJ_SITE, "left_boundary"), 1] = boundaries[0][1]
+    env._model.site_pos[mujoco.mj_name2id(env._model, mujoco.mjtObj.mjOBJ_SITE, "top_boundary"), 0] = boundaries[1][0]
+    env._model.site_pos[mujoco.mj_name2id(env._model, mujoco.mjtObj.mjOBJ_SITE, "right_boundary"), 1] = boundaries[1][1]
 
     env._write_data("puck_x_vel", puck_vel[0])
     env._write_data("puck_y_vel", puck_vel[1])

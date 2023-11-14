@@ -69,6 +69,9 @@
 
         <site name="puck_vis" type="ellipsoid" size="0.03165 0.03165 0.004" pos="0 0 -0.05"/>
         <site name="puck_vis_rot" type="cylinder"  size="0.0045 0.006" rgba="1 0 0 1" pos="0 0 -0.05"/>
+        <site name="left_boundary" type="box" size="1.98 0.01 0.004" pos="0 0 0.05"/>
+        <site name="top_boundary" type="box" size="0.01 1.038 0.004" pos="0 0 0.05"/>
+        <site name="right_boundary" type="box" size="1.98 0.01 0.004" pos="0 0 0.05"/>
     </worldbody>
 
     <contact>

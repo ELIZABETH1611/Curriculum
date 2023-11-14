@@ -13,8 +13,9 @@ from examples.rl.network import SACActorNetwork, SACCriticNetwork
 from experiments.currot.currot import GPUCurrOT, ContextTransform
 from experiments.currot.gpu_currot_utils import ParameterSchedule
 from experiments.environments.boundary_distributions import get_virtual_boundaries
-from experiments.environments.air_hockey_wrapper import AirHockeyWrapper, AirHockeyCurriculum
 from examples.rl.air_hockey_contraints import JointPosConstraint, EndEffectorPosConstraint
+from experiments.environments.air_hockey_wrapper import AirHockeyWrapper, AirHockeyCurriculum
+from experiments.environments.boundary_distributions import TargetBoundarySampler, EasyBoundarySampler
 
 
 class CurrOTWrapper(AirHockeyCurriculum):
@@ -37,13 +38,31 @@ class CurrOTWrapper(AirHockeyCurriculum):
         self.currot.save(path)
 
 
+def get_currot(min_success_rate: float, curriculum_epsilon: float):
+    context_transform = AirHockeyContextTransform()
+    easy_samples = EasyBoundarySampler()(1000, concatenated=True)
+    # We initially shoot the pucks towards the agent
+    # easy_samples[:, 4:] = 5 * (np.array([-0.75, 0.])[None, :] - easy_samples[:, 2:4])
+    assert torch.all(
+        context_transform.constraint_fn(context_transform.whiten(torch.from_numpy(easy_samples).float())))
+
+    target_sampler = TargetBoundarySampler()
+    return CurrOTWrapper(GPUCurrOT(
+        init_samples=torch.from_numpy(easy_samples).float(),
+        target_sampler=lambda n: torch.from_numpy(target_sampler(n, concatenated=True)).float(),
+        metric_transform=lambda x: x[..., 0] - min_success_rate,
+        epsilon=ParameterSchedule(torch.tensor(curriculum_epsilon)),
+        constraint_fn=context_transform.constraint_fn, theta=0.25 * torch.pi, success_buffer_size=1000,
+        buffer_size=1500, context_transform=context_transform))
+
+
 class AirHockeyContextTransform(ContextTransform):
 
     def __init__(self, velocity_bounds=None):
         super().__init__()
         table_bounds = ([-0.974, -0.519], [0.974, 0.519])
         if velocity_bounds is None:
-            velocity_bounds = ([-0.2, -0.2], [0., 0.2])
+            velocity_bounds = ([-0.02, -0.02], [0., 0.02])
         self.lb = torch.tensor(table_bounds[0] + table_bounds[0] + velocity_bounds[0])
         self.ub = torch.tensor(table_bounds[1] + table_bounds[1] + velocity_bounds[1])
 
@@ -54,12 +73,13 @@ class AirHockeyContextTransform(ContextTransform):
         puck_vel = context[..., 4:]
 
         bounds = (torch.tensor([-0.75, -0.519]), torch.tensor([0.974, 0.519]))
+        puck_bounds = (torch.tensor([-0.65, -0.4]), torch.tensor([-0.20, 0.4]))
         vel_bounds = (torch.tensor([-1, -0.2]), torch.tensor([0, 0.2]))
 
         goal_in_bounds = torch.logical_and(torch.all(bounds[0] <= goal_pos, dim=-1),
                                            torch.all(goal_pos <= bounds[1], dim=-1))
-        puck_in_bounds = torch.logical_and(torch.all(bounds[0] <= puck_pos, dim=-1),
-                                           torch.all(puck_pos <= bounds[1], dim=-1))
+        puck_in_bounds = torch.logical_and(torch.all(puck_bounds[0] <= puck_pos, dim=-1),
+                                           torch.all(puck_pos <= puck_bounds[1], dim=-1))
         vel_in_bounds = torch.logical_and(torch.all(vel_bounds[0] <= puck_vel, dim=-1),
                                           torch.all(puck_vel <= vel_bounds[1], dim=-1))
         in_bounds = torch.logical_and(goal_in_bounds, np.logical_and(puck_in_bounds, vel_in_bounds))
@@ -165,27 +185,11 @@ def main(robot: str, use_atacom: bool, curriculum: bool, n_steps_per_fit: int, c
     torch.random.manual_seed(seed)
     np.random.seed(seed)
 
-    from experiments.environments.boundary_distributions import TargetBoundarySampler, EasyBoundarySampler
     if curriculum == "hand_crafted":
         from experiments.environments.boundary_distributions import BoundaryCurriculum
         task_sampler = BoundaryCurriculum(20, performance_threshold=min_success_rate)
     elif curriculum == "currot":
-        context_transform = AirHockeyContextTransform()
-
-        easy_samples = EasyBoundarySampler()(1000, concatenated=True)
-        # We initially shoot the pucks towards the agent
-        easy_samples[:, 4:] = 5 * (np.array([-0.75, 0.])[None, :] - easy_samples[:, 2:4])
-        assert torch.all(
-            context_transform.constraint_fn(context_transform.whiten(torch.from_numpy(easy_samples).float())))
-
-        target_sampler = TargetBoundarySampler()
-        task_sampler = CurrOTWrapper(GPUCurrOT(
-            init_samples=torch.from_numpy(easy_samples).float(),
-            target_sampler=lambda n: torch.from_numpy(target_sampler(n, concatenated=True)).float(),
-            metric_transform=lambda x: x[..., 0] - min_success_rate,
-            epsilon=ParameterSchedule(torch.tensor(curriculum_epsilon)),
-            constraint_fn=context_transform.constraint_fn, theta=0.25 * torch.pi, success_buffer_size=1000,
-            buffer_size=1500, context_transform=context_transform))
+        task_sampler = get_currot(min_success_rate, curriculum_epsilon)
     elif curriculum == "none":
         task_sampler = TargetBoundarySampler()
     else:

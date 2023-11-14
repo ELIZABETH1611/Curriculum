@@ -62,15 +62,15 @@ class TargetBoundarySampler(BoundarySampler):
     PUCK_BOUNDS = (np.array([-0.65, -0.35]), np.array([-0.25, 0.35]))
     RECTANGLE_X = 0.
     RECTANGLE_WIDTH = 1.038  # Corresponds to self.env_info['table']['width']
-    RECTANGLE_HEIGHT = 0.974  # Corresponds to self.env_info['table']['height']
+    RECTANGLE_HEIGHT = 0.974  # Corresponds to self.env_info['table']['height'] / 2
 
     def __init__(self):
         super().__init__(self.PUCK_BOUNDS, self.RECTANGLE_X, self.RECTANGLE_WIDTH, self.RECTANGLE_HEIGHT)
 
 
 class EasyBoundarySampler(BoundarySampler):
-    PUCK_BOUNDS = (np.array([-0.7, -0.02]), np.array([-0.68, 0.02]))
-    RECTANGLE_X = -0.7
+    PUCK_BOUNDS = (np.array([-0.65, -0.02]), np.array([-0.64, 0.02]))
+    RECTANGLE_X = -0.65
     RECTANGLE_WIDTH = 0.15
     RECTANGLE_HEIGHT = 0.1
 
