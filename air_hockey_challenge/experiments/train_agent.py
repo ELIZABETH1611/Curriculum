@@ -159,18 +159,17 @@ def evaluate_agent(eval_core: Core, save_path: Path, render: bool = False):
     np.savez(save_path, successes=np.array(successes), interceptions=np.array(interceptions))
 
 
-def main(robot: str, use_atacom: bool, use_curriculum: bool, curriculum_epsilon: float = 0.2,
+def main(robot: str, use_atacom: bool, curriculum: bool, n_steps_per_fit: int, curriculum_epsilon: float = 0.2,
          min_success_rate: float = 0.5, render: bool = False, save_path: Path = None, seed: int = 0,
          action_penalty: float = 0., sparse_reward: bool = False, n_evaluations: int = 0, n_checkpoints: int = 5):
     torch.random.manual_seed(seed)
     np.random.seed(seed)
 
     from experiments.environments.boundary_distributions import TargetBoundarySampler, EasyBoundarySampler
-    if use_curriculum:
-        # You can also put other curricula in here!!, e.g.
-        # from experiments.environments.boundary_distributions import BoundaryCurriculum
-        # task_sampler = BoundaryCurriculum(20, performance_threshold=min_success_rate)
-
+    if curriculum == "hand_crafted":
+        from experiments.environments.boundary_distributions import BoundaryCurriculum
+        task_sampler = BoundaryCurriculum(20, performance_threshold=min_success_rate)
+    elif curriculum == "currot":
         context_transform = AirHockeyContextTransform()
 
         easy_samples = EasyBoundarySampler()(1000, concatenated=True)
@@ -187,8 +186,10 @@ def main(robot: str, use_atacom: bool, use_curriculum: bool, curriculum_epsilon:
             epsilon=ParameterSchedule(torch.tensor(curriculum_epsilon)),
             constraint_fn=context_transform.constraint_fn, theta=0.25 * torch.pi, success_buffer_size=1000,
             buffer_size=1500, context_transform=context_transform))
-    else:
+    elif curriculum == "none":
         task_sampler = TargetBoundarySampler()
+    else:
+        raise RuntimeError(f"Unknown curriculum type: '{curriculum}'")
 
     if use_atacom:
         if robot == "iiwa":
@@ -234,14 +235,14 @@ def main(robot: str, use_atacom: bool, use_curriculum: bool, curriculum_epsilon:
 
     for i in range(50):
         print(f"Epoch: {i}")
-        core.learn(n_steps=100000, n_steps_per_fit=5, quiet=False, render=render)
+        core.learn(n_steps=100000, n_steps_per_fit=n_steps_per_fit, quiet=False, render=render)
         # Save the data
         if save_path is not None and i == save_epochs[0]:
             agent.save(save_path / f"agent_{i + 1}")
 
         # The curriculum checkpoints do not take a lot of space but are useful in debugging
         if save_path is not None:
-            if use_curriculum:
+            if curriculum != "none":
                 curriculum_save_path = save_path / f"curriculum_{i + 1}"
                 curriculum_save_path.mkdir(exist_ok=True, parents=True)
                 task_sampler.save(curriculum_save_path)
@@ -260,9 +261,10 @@ if __name__ == "__main__":
     parser.add_argument("--action_penalty", type=float, default=0.)
     parser.add_argument("--seed", type=int, required=True)
 
-    parser.add_argument("--use_curriculum", action="store_true")
+    parser.add_argument("--curriculum", choices=["hand_crafted", "currot", "none"], type=str, default="none")
     parser.add_argument("--curriculum_success_rate", type=float)
 
+    parser.add_argument("--n_steps_per_fit", type=int)
     parser.add_argument("--n_evaluations", type=int, default=0)
     parser.add_argument("--n_checkpoints", type=int, default=5)
 
@@ -274,7 +276,12 @@ if __name__ == "__main__":
                  f"{'_sparse' if args.sparse_reward else '_dense'}_ap_{args.action_penalty}"
     parent_dir = Path(__file__).resolve().parent / parent_dir
 
-    if args.use_curriculum:
+    if args.curriculum == "currot":
+        if args.curriculum_success_rate is None:
+            raise RuntimeError("If using a curriculum, a success rate needs to be specified!")
+
+        save_dir = parent_dir / "currot_learner" / f"seed_{args.seed}_delta_{args.curriculum_success_rate}"
+    elif args.curriculum == "hand_crafted":
         if args.curriculum_success_rate is None:
             raise RuntimeError("If using a curriculum, a success rate needs to be specified!")
 
@@ -283,7 +290,7 @@ if __name__ == "__main__":
         save_dir = parent_dir / "default_learner" / f"seed_{args.seed}"
     save_dir.mkdir(exist_ok=True, parents=True)
 
-    main(robot=args.robot, use_atacom=args.use_atacom, use_curriculum=args.use_curriculum, curriculum_epsilon=0.2,
+    main(robot=args.robot, use_atacom=args.use_atacom, curriculum=args.curriculum, curriculum_epsilon=0.2,
          min_success_rate=args.curriculum_success_rate, render=args.render, save_path=save_dir, seed=args.seed,
          action_penalty=args.action_penalty, sparse_reward=args.sparse_reward, n_evaluations=args.n_evaluations,
-         n_checkpoints=args.n_checkpoints)
+         n_checkpoints=args.n_checkpoints, n_steps_per_fit=args.n_steps_per_fit)

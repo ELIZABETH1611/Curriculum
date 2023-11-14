@@ -8,6 +8,17 @@ The current released version is **Tournament**.
 
 Please see the [documentation](https://air-hockey-challenges-docs.readthedocs.io/en/latest/) for Installation and usage.
 
+## Running Pascal's Code
+
+To run the code from Pascal, execute the following command
+
+```code
+cd experiments
+python train_agent.py --robot planar --use_atacom --sparse_reward --curriculum hand_crafted --n_steps_per_fit 1 --n_evaluations 50 --seed 0
+```
+
+This runs the hand-crafted curriculum on the planar robot with atacom.
+
 ## Support
 
 Please create github issues for technical questions and send email to
