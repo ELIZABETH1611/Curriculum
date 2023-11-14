@@ -155,7 +155,7 @@ class EndEffectorConstraint(Constraint):
         # 1 Dimension on x direction: x > x_lb
         # 2 Dimension on y direction: y > y_lb, y < y_ub
         # 2 Dimension on z direction: z > z_lb, z < z_ub
-        super().__init__(env_info, output_dim=3, **kwargs)
+        super().__init__(env_info, output_dim=5, **kwargs)
         self._name = "ee_constr"
         tolerance = 0.02
 
@@ -166,19 +166,19 @@ class EndEffectorConstraint(Constraint):
                 self._env_info['table']['length'] / 2 - self._env_info['mallet']['radius'])
         self.y_lb = - (self._env_info['table']['width'] / 2 - self._env_info['mallet']['radius'])
         self.y_ub = (self._env_info['table']['width'] / 2 - self._env_info['mallet']['radius'])
-        # self.z_lb = self._env_info['robot']['ee_desired_height'] - tolerance
-        # self.z_ub = self._env_info['robot']['ee_desired_height'] + tolerance
+        self.z_lb = self._env_info['robot']['ee_desired_height'] - tolerance
+        self.z_ub = self._env_info['robot']['ee_desired_height'] + tolerance
 
     def _fun(self, q, dq):
         ee_pos, _ = forward_kinematics(self.robot_model, self.robot_data, q)
         self._fun_value = np.array([-ee_pos[0] + self.x_lb,
-                                    -ee_pos[1] + self.y_lb, ee_pos[1] - self.y_ub])
-        return self._fun_value    
-
+                                    -ee_pos[1] + self.y_lb, ee_pos[1] - self.y_ub,
+                                    -ee_pos[2] + self.z_lb, ee_pos[2] - self.z_ub])
+        return self._fun_value
 
     def _jacobian(self, q, dq):
         jac = jacobian(self.robot_model, self.robot_data, q)
-        dc_dx = np.array([[-1, 0., 0.], [0., -1., 0.], [0., 1., 0.]])
+        dc_dx = np.array([[-1, 0., 0.], [0., -1., 0.], [0., 1., 0.], [0., 0., -1.], [0., 0., 1.]])
         self._jac_value[:, :self._env_info['robot']['n_joints']] = dc_dx @ jac[:3, :self._env_info['robot']['n_joints']]
         return self._jac_value
 

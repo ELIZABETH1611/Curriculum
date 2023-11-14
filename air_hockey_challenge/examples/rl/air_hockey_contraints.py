@@ -77,23 +77,28 @@ class EndEffectorPosConstraint(Constraint):
     def __init__(self, env_info):
         name = "ee_pos"
         self.n_joints = env_info['robot']['n_joints']
-        self.ee_constr = env_info['constraints'].get('ee_constr')
-        self.link_constr = env_info['constraints'].get('link_constr')
+        from air_hockey_challenge.constraints.constraints import EndEffectorConstraint, LinkConstraint
+        self.ee_constr = EndEffectorConstraint(env_info)
+        # self.ee_constr = env_info['constraints'].get('ee_constr')
+        # self.link_constr = env_info['constraints'].get('link_constr')
 
         if self.n_joints == 3:
-            dim_k = 3
+            dim_k = 5
+            self.link_constr = None
         else:
             dim_k = 7
+            self.link_constr = LinkConstraint(env_info)
         super().__init__(name, dim_q=self.n_joints, dim_k=dim_k, dim_x=0)
 
     def fun(self, q, x=None) -> np.ndarray:
         pos = q[:self.n_joints]
         vel = q[self.n_joints:]
-        val =self.ee_constr.fun(pos, vel)
         # print("en efect 1" )
 
-
-        # val = np.concatenate([self.ee_constr.fun(pos, vel), selfself.link_constr.fun(pos, vel)])
+        if self.link_constr is None:
+            val = self.ee_constr.fun(pos, vel)
+        else:
+            val = np.concatenate([self.ee_constr.fun(pos, vel), self.link_constr.fun(pos, vel)])
         return val + 2e-2
 
     def df_dq(self, q, x=None) -> np.ndarray:
@@ -101,9 +106,11 @@ class EndEffectorPosConstraint(Constraint):
         pos = q[:self.n_joints]
         vel = q[self.n_joints:]
 
-        J_q_ =  self.ee_constr.jacobian(pos, vel)[:, :self.n_joints].copy()
-        # J_q_ = np.vstack([self.ee_constr.jacobian(pos, vel)[:, :self.n_joints].copy(),
-        #                   self.link_constr.jacobian(pos, vel)[:, :self.n_joints].copy()])
+        if self.link_constr is None:
+            J_q_ = self.ee_constr.jacobian(pos, vel)[:, :self.n_joints].copy()
+        else:
+            J_q_ = np.vstack([self.ee_constr.jacobian(pos, vel)[:, :self.n_joints].copy(),
+                              self.link_constr.jacobian(pos, vel)[:, :self.n_joints].copy()])
         return J_q_[:self.dim_k, :]
 
 
@@ -111,7 +118,9 @@ class JointPosConstraint(Constraint):
     def __init__(self, env_info):
         name = "joint_pos"
         self.n_joints = env_info['robot']['n_joints']
-        self.joint_pos_constr = env_info['constraints'].get('joint_pos_constr')
+        from air_hockey_challenge.constraints.constraints import JointPositionConstraint
+        self.joint_pos_constr = JointPositionConstraint(env_info)
+        # self.joint_pos_constr = env_info['constraints'].get('joint_pos_constr')
         super().__init__(name, dim_q=self.n_joints, dim_k=self.n_joints * 2, dim_x=0)
 
     def fun(self, q, x=None) -> np.ndarray:
