@@ -241,7 +241,7 @@ def main(robot: str, use_atacom: bool, curriculum: bool, n_steps_per_fit: int, c
         print(f"Epoch: {i}")
         core.learn(n_steps=100000, n_steps_per_fit=n_steps_per_fit, quiet=False, render=render)
         # Save the data
-        if save_path is not None and i == save_epochs[0]:
+        if save_path is not None and len(save_epochs) > 0 and i == save_epochs[0]:
             agent.save(save_path / f"agent_{i + 1}")
 
         # The curriculum checkpoints do not take a lot of space but are useful in debugging
@@ -252,7 +252,7 @@ def main(robot: str, use_atacom: bool, curriculum: bool, n_steps_per_fit: int, c
                 task_sampler.save(curriculum_save_path)
             save_epochs = save_epochs[1:]
 
-        if save_path is not None and i == eval_epochs[0]:
+        if save_path is not None and len(eval_epochs) > 0 and i == eval_epochs[0]:
             evaluate_agent(eval_core, save_path / f"agent_performance_{i}.npz")
             eval_epochs = eval_epochs[1:]
 
