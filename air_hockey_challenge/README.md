@@ -19,6 +19,10 @@ python train_agent.py --robot planar --use_atacom --sparse_reward --curriculum h
 
 This runs the hand-crafted curriculum on the planar robot with atacom.
 
+The hand-crafted curriculum can be changed in the **experiments/environments/boundary_distributions.py** file.
+
+Visualizations of the curriculum can be done by running the **experiments/environments/planar3dof.py**
+
 ## Support
 
 Please create github issues for technical questions and send email to
