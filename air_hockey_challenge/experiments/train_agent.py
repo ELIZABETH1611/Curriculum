@@ -15,7 +15,9 @@ from experiments.currot.gpu_currot_utils import ParameterSchedule
 from experiments.environments.boundary_distributions import get_virtual_boundaries
 from examples.rl.air_hockey_contraints import JointPosConstraint, EndEffectorPosConstraint
 from experiments.environments.air_hockey_wrapper import AirHockeyWrapper, AirHockeyCurriculum
-from experiments.environments.boundary_distributions import TargetBoundarySampler, EasyBoundarySampler
+from experiments.environments.boundary_distributions import TargetBoundarySampler, EasyBoundarySampler, \
+    BoundaryCurriculum
+from experiments.environments.top_end_distributions import TargetTopEndSampler, EasyTopEndSampler, TopEndCurriculum
 
 
 class CurrOTWrapper(AirHockeyCurriculum):
@@ -38,36 +40,41 @@ class CurrOTWrapper(AirHockeyCurriculum):
         self.currot.save(path)
 
 
-def get_currot(min_success_rate: float, curriculum_epsilon: float):
-    context_transform = AirHockeyContextTransform()
-    easy_samples = EasyBoundarySampler()(1000, concatenated=True)
-    # We initially shoot the pucks towards the agent
-    # easy_samples[:, 4:] = 5 * (np.array([-0.75, 0.])[None, :] - easy_samples[:, 2:4])
+def get_currot(setting: str, min_success_rate: float, curriculum_epsilon: float):
+    if setting == "boundary":
+        easy_samples = EasyBoundarySampler()(1000, concatenated=True)
+        hard_sampler = TargetBoundarySampler()
+    elif setting == "top":
+        easy_samples = EasyTopEndSampler()(1000, concatenated=True)
+        hard_sampler = TargetTopEndSampler()
+    else:
+        raise RuntimeError(f"Unknown setting: '{setting}'")
+
+    context_transform = AirHockeyContextTransform(setting == "boundary")
     assert torch.all(
         context_transform.constraint_fn(context_transform.whiten(torch.from_numpy(easy_samples).float())))
 
-    target_sampler = TargetBoundarySampler()
     return CurrOTWrapper(GPUCurrOT(
         init_samples=torch.from_numpy(easy_samples).float(),
-        target_sampler=lambda n: torch.from_numpy(target_sampler(n, concatenated=True)).float(),
+        target_sampler=lambda n: torch.from_numpy(hard_sampler(n, concatenated=True)).float(),
         metric_transform=lambda x: x[..., 0] - min_success_rate,
         epsilon=ParameterSchedule(torch.tensor(curriculum_epsilon)),
-        constraint_fn=context_transform.constraint_fn, theta=0.25 * torch.pi, success_buffer_size=1000,
-        buffer_size=1500, context_transform=context_transform))
+        constraint_fn=context_transform.constraint_fn, theta=0.25 * torch.pi,
+        success_buffer_size=1000, buffer_size=1500, context_transform=context_transform))
 
 
 class AirHockeyContextTransform(ContextTransform):
 
-    def __init__(self, velocity_bounds=None):
+    def __init__(self, use_virtual_bounds: bool, velocity_bounds=None):
         super().__init__()
         table_bounds = ([-0.974, -0.519], [0.974, 0.519])
         if velocity_bounds is None:
             velocity_bounds = ([-0.02, -0.02], [0., 0.02])
         self.lb = torch.tensor(table_bounds[0] + table_bounds[0] + velocity_bounds[0])
         self.ub = torch.tensor(table_bounds[1] + table_bounds[1] + velocity_bounds[1])
+        self.use_virtual_bounds = use_virtual_bounds
 
-    @staticmethod
-    def _colored_constraint_fn(context):
+    def _colored_constraint_fn(self, context):
         goal_pos = context[..., :2]
         puck_pos = context[..., 2:4]
         puck_vel = context[..., 4:]
@@ -85,11 +92,14 @@ class AirHockeyContextTransform(ContextTransform):
         in_bounds = torch.logical_and(goal_in_bounds, np.logical_and(puck_in_bounds, vel_in_bounds))
 
         # The puck pos needs to be at least 5 cm away from the goal position in each direction
-        lb, ub = get_virtual_boundaries(goal_pos.numpy(), 1.948)
-        lb, ub = torch.from_numpy(lb).float(), torch.from_numpy(ub).float()
-        goal_distance_ok = torch.logical_and(
-            torch.logical_and(puck_pos[..., 0] >= lb[..., 0] + 0.05, puck_pos[..., 0] <= ub[..., 0] - 0.05),
-            torch.logical_and(puck_pos[..., 1] >= lb[..., 1] + 0.05, puck_pos[..., 1] <= ub[..., 1] - 0.05))
+        if self.use_virtual_bounds:
+            lb, ub = get_virtual_boundaries(goal_pos.numpy(), 1.948)
+            lb, ub = torch.from_numpy(lb).float(), torch.from_numpy(ub).float()
+            goal_distance_ok = torch.logical_and(
+                torch.logical_and(puck_pos[..., 0] >= lb[..., 0] + 0.05, puck_pos[..., 0] <= ub[..., 0] - 0.05),
+                torch.logical_and(puck_pos[..., 1] >= lb[..., 1] + 0.05, puck_pos[..., 1] <= ub[..., 1] - 0.05))
+        else:
+            goal_distance_ok = torch.norm(goal_pos - puck_pos, dim=-1) >= 0.05
 
         return torch.logical_and(goal_distance_ok, in_bounds)
 
@@ -179,19 +189,31 @@ def evaluate_agent(eval_core: Core, save_path: Path, render: bool = False):
     np.savez(save_path, successes=np.array(successes), interceptions=np.array(interceptions))
 
 
-def main(robot: str, use_atacom: bool, curriculum: bool, n_steps_per_fit: int, curriculum_epsilon: float = 0.2,
+def main(robot: str, setting: str, use_atacom: bool, curriculum: bool, n_steps_per_fit: int,
+         curriculum_epsilon: float = 0.2,
          min_success_rate: float = 0.5, render: bool = False, save_path: Path = None, seed: int = 0,
          action_penalty: float = 0., sparse_reward: bool = False, n_evaluations: int = 0, n_checkpoints: int = 5):
     torch.random.manual_seed(seed)
     np.random.seed(seed)
 
+    if setting == "boundary":
+        target_sampler = TargetBoundarySampler()
+    elif setting == "top":
+        target_sampler = TargetTopEndSampler()
+    else:
+        raise RuntimeError(f"Unknown setting: '{setting}'")
+
     if curriculum == "hand_crafted":
-        from experiments.environments.boundary_distributions import BoundaryCurriculum
-        task_sampler = BoundaryCurriculum(20, performance_threshold=min_success_rate)
+        if setting == "boundary":
+            task_sampler = BoundaryCurriculum(20, performance_threshold=min_success_rate)
+        elif setting == "top":
+            task_sampler = TopEndCurriculum(20, performance_threshold=min_success_rate)
+        else:
+            raise RuntimeError(f"Unknown setting: '{setting}'")
     elif curriculum == "currot":
-        task_sampler = get_currot(min_success_rate, curriculum_epsilon)
+        task_sampler = get_currot(setting, min_success_rate, curriculum_epsilon)
     elif curriculum == "none":
-        task_sampler = TargetBoundarySampler()
+        task_sampler = target_sampler
     else:
         raise RuntimeError(f"Unknown curriculum type: '{curriculum}'")
 
@@ -202,9 +224,10 @@ def main(robot: str, use_atacom: bool, curriculum: bool, n_steps_per_fit: int, c
             from experiments.environments.planar3dof import AirHockeyPosition
 
         env = AirHockeyWrapper(AirHockeyPosition, curriculum=task_sampler, action_penalty_scale=action_penalty,
-                               sparse=sparse_reward)
-        eval_env = AirHockeyWrapper(AirHockeyPosition, curriculum=TargetBoundarySampler(),
-                                    action_penalty_scale=action_penalty, sparse=sparse_reward)
+                               sparse=sparse_reward, stop_on_all_boundaries=setting == "boundary")
+        eval_env = AirHockeyWrapper(AirHockeyPosition, curriculum=target_sampler,
+                                    action_penalty_scale=action_penalty, sparse=sparse_reward,
+                                    stop_on_all_boundaries=setting == "boundary")
         sac_agent = build_agent_SAC(env.env_info, alg="atacom-sac", actor_lr=5e-4, critic_lr=5e-4,
                                     n_features="256 256 256 256", batch_size=64, initial_replay_size=2000,
                                     max_replay_size=200000, tau=0.001, warmup_transitions=4000, lr_alpha=3e-4,
@@ -260,6 +283,7 @@ def main(robot: str, use_atacom: bool, curriculum: bool, n_steps_per_fit: int, c
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--robot", choices=["iiwa", "planar"], type=str, default="iiwa")
+    parser.add_argument("--setting", choices=["boundary", "top"], type=str, default="boundary")
     parser.add_argument("--use_atacom", action="store_true")
     parser.add_argument("--sparse_reward", action="store_true")
     parser.add_argument("--action_penalty", type=float, default=0.)
@@ -268,7 +292,7 @@ if __name__ == "__main__":
     parser.add_argument("--curriculum", choices=["hand_crafted", "currot", "none"], type=str, default="none")
     parser.add_argument("--curriculum_success_rate", type=float)
 
-    parser.add_argument("--n_steps_per_fit", type=int)
+    parser.add_argument("--n_steps_per_fit", type=int, required=True)
     parser.add_argument("--n_evaluations", type=int, default=0)
     parser.add_argument("--n_checkpoints", type=int, default=5)
 
@@ -277,6 +301,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     parent_dir = f"{'atacom_' if args.use_atacom else ''}{'iiwa' if args.robot == 'iiwa' else 'planar'}" \
+                 f"{'_boundary' if args.setting == 'boundary' else '_top'}" \
                  f"{'_sparse' if args.sparse_reward else '_dense'}_ap_{args.action_penalty}"
     parent_dir = Path(__file__).resolve().parent / parent_dir
 
@@ -294,7 +319,8 @@ if __name__ == "__main__":
         save_dir = parent_dir / "default_learner" / f"seed_{args.seed}"
     save_dir.mkdir(exist_ok=True, parents=True)
 
-    main(robot=args.robot, use_atacom=args.use_atacom, curriculum=args.curriculum, curriculum_epsilon=0.2,
-         min_success_rate=args.curriculum_success_rate, render=args.render, save_path=save_dir, seed=args.seed,
-         action_penalty=args.action_penalty, sparse_reward=args.sparse_reward, n_evaluations=args.n_evaluations,
-         n_checkpoints=args.n_checkpoints, n_steps_per_fit=args.n_steps_per_fit)
+    torch.set_num_threads(2)
+    main(robot=args.robot, setting=args.setting, use_atacom=args.use_atacom, curriculum=args.curriculum,
+         curriculum_epsilon=0.2, min_success_rate=args.curriculum_success_rate, render=args.render, save_path=save_dir,
+         seed=args.seed, action_penalty=args.action_penalty, sparse_reward=args.sparse_reward,
+         n_evaluations=args.n_evaluations, n_checkpoints=args.n_checkpoints, n_steps_per_fit=args.n_steps_per_fit)

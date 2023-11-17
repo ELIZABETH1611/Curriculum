@@ -1,5 +1,7 @@
 import torch
 from typing import Optional, Callable
+# Loads the openmp shared libraries (current bug of the library)
+import sklearn
 from pykeops.torch import LazyTensor
 
 

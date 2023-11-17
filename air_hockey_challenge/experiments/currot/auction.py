@@ -1,6 +1,8 @@
 import torch
 import torch_scatter
 from typing import Union
+# Loads the openmp shared libraries (current bug of the library)
+import sklearn
 from pykeops.torch import LazyTensor, Vj
 
 

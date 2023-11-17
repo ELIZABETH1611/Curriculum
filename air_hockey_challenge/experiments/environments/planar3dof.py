@@ -9,7 +9,8 @@ class AirHockey(AirHockeySingle):
     Class for the air hockey hitting task using CL.
     """
 
-    def __init__(self, task_sampler, gamma=0.99, horizon=500, viewer_params={}, sparse: bool = False):
+    def __init__(self, task_sampler, gamma=0.99, horizon=500, viewer_params={}, sparse: bool = False,
+                 stop_on_all_boundaries: bool = True):
         """
         Constructor
         Args:
@@ -24,6 +25,7 @@ class AirHockey(AirHockeySingle):
 
         self.goal = np.array([0.974, 0.519])
         self.task_sampler = task_sampler
+        self.stop_on_all_boundaries = stop_on_all_boundaries
 
     def _modify_mdp_info(self, mdp_info):
         return util.modify_info_fn(AirHockey, self, mdp_info)
@@ -38,8 +40,10 @@ class AirHockey(AirHockeySingle):
         return util.reward_fn(self._internal_info, sparse=self.sparse, gamma=self.info.gamma)
 
     def is_absorbing(self, obs):
-        self._internal_info = util.all_absorbing_fn(self, obs)
-        # self._internal_info = util.top_absorbing_fn(self, obs)
+        if self.stop_on_all_boundaries:
+            self._internal_info = util.all_absorbing_fn(self, obs)
+        else:
+            self._internal_info = util.top_absorbing_fn(self, obs)
         return self._internal_info["done"]
 
     def _create_info_dictionary(self, obs):
