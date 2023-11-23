@@ -34,7 +34,7 @@ class TopEndSampler(AirHockeyCurriculum):
 
 
 class TargetTopEndSampler(TopEndSampler):
-    GOAL_BOUNDS = ([0.75, -0.35], [0.9, 0.35])
+    GOAL_BOUNDS = ([0.974, -0.519], [0.974, 0.519])
     PUCK_BOUNDS = ([-0.65, -0.35], [-0.25, 0.35])
 
     def __init__(self):

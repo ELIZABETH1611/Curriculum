@@ -40,10 +40,15 @@ class AirHockey(AirHockeySingle):
         return util.reward_fn(self._internal_info, sparse=self.sparse, gamma=self.info.gamma)
 
     def is_absorbing(self, obs):
-        if self.stop_on_all_boundaries:
-            self._internal_info = util.all_absorbing_fn(self, obs)
+        if self._internal_info is None:
+            prev_puck_intercepted = False
         else:
-            self._internal_info = util.top_absorbing_fn(self, obs)
+            prev_puck_intercepted = self._internal_info["puck_intercepted"]
+
+        if self.stop_on_all_boundaries:
+            self._internal_info = util.all_absorbing_fn(self, obs, prev_puck_intercepted)
+        else:
+            self._internal_info = util.top_absorbing_fn(self, obs, prev_puck_intercepted)
         return self._internal_info["done"]
 
     def _create_info_dictionary(self, obs):

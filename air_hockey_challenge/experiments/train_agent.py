@@ -170,7 +170,8 @@ def build_agent_SAC(env_info, alg, actor_lr, critic_lr, n_features, batch_size, 
                       warmup_transitions=warmup_transitions,
                       tau=tau,
                       lr_alpha=lr_alpha,
-                      critic_fit_params=None)
+                      critic_fit_params=None,
+                      target_entropy=-7)
 
     agent = SAC(env_info['rl_info'], actor_mu_params=actor_mu_params, actor_sigma_params=actor_sigma_params,
                 actor_optimizer=actor_optimizer, critic_params=critic_params, **alg_params)

@@ -67,7 +67,7 @@ def check_border_contact(env, prev_obs, cur_obs, table_bounds, dt, eps=1e-3):
         return np.ones(4) * np.inf, np.ones((4, 2)) * np.inf
 
 
-def all_absorbing_fn(env, obs):
+def all_absorbing_fn(env, obs, prev_puck_intercepted: bool):
     '''
     Absrobing states
     '''
@@ -87,7 +87,7 @@ def all_absorbing_fn(env, obs):
 
     # In this case, any collision terminates the experiment
     internal_info = {"done": False, "penalty": False, "distance": np.linalg.norm(puck_pos[:2] - env.goal),
-                     "success": False, "puck_intercepted": puck_vel[0] >= 0.05}
+                     "success": False, "puck_intercepted": puck_vel[0] >= 0.05 or prev_puck_intercepted}
     # first_collision == 0 means that the puck hit the back end of the table
     if mallet_collision or velocity_exceeded or back_collision:
         internal_info["done"] = True
@@ -102,7 +102,7 @@ def all_absorbing_fn(env, obs):
     return internal_info
 
 
-def top_absorbing_fn(env, obs):
+def top_absorbing_fn(env, obs, prev_puck_intercepted: bool):
     '''
     Absorbing states (ignores the sides of the table)
     '''
@@ -126,7 +126,7 @@ def top_absorbing_fn(env, obs):
 
     # In this case, any collision terminates the experiment
     internal_info = {"done": False, "penalty": False, "distance": np.linalg.norm(puck_pos[:2] - env.goal),
-                     "success": False, "puck_intercepted": puck_vel[0] >= 0.05}
+                     "success": False, "puck_intercepted": puck_vel[0] >= 0.05 or prev_puck_intercepted}
     # first_collision == 0 means that the puck hit the back end of the table
     if mallet_collision or velocity_exceeded or back_collision or puck_out:
         internal_info["done"] = True
@@ -193,6 +193,8 @@ def setup_fn(cls, env, state=None):
 
     env._write_data("puck_x_pos", puck_pos[0])
     env._write_data("puck_y_pos", puck_pos[1])
+
+    env._internal_info = None
 
     super(cls, env).setup(state)
 
